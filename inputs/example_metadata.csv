@@ -1,0 +1,4 @@
+dataset,slide_path,slide_id,case_id,target_var,target_var_2
+DSNAME,/path/to/slide1,slide1,case1,A,X
+DSNAME,/path/to/slide2,slide2,case1,A,Y
+DSNAME,/path/to/slide3,slide3,case2,B,Z
