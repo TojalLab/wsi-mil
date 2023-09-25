@@ -22,7 +22,7 @@ The metadata file is used by the software to keep track of the slides and its cl
 The weights of the feature extractor model can be downloaded here: [RetCCL](https://github.com/Xiyue-Wang/RetCCL),
 download the weights and add the `RetCCL_resnet50_weights.pth` file to the `pretrained_models` directory.
 
-The weights of the tile filtering models are already included in this repo on the `pretrained_models` directory.
+The weights of the tile filtering models can be downloaded [here](https://github.com/TojalLab/wsi-mil/releases/tag/pretrained_models).
 
 More information regarding these networks can be found [here](/filtering%20networks%20-%20instructions.md).
 
