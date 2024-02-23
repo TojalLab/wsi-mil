@@ -15,8 +15,8 @@ from lib.plot import figure_to_numpy, confusion_matrix_figure, roc_curves_figure
 
 class CLAMInterface(pl.LightningModule):
 
-    valid_monitor = 'valid/MulticlassF1Score'
-    monitor_mode = 'max'
+    valid_monitor = 'valid/total_loss'
+    monitor_mode = 'min'
 
     def __init__(self, cfg):
         super().__init__()
@@ -139,6 +139,7 @@ class CLAMInterface(pl.LightningModule):
     def pred_to_attention_map(pred):
         y_hat = pred['Y_hat'].argmax().item()
         return pred['A_raw'][y_hat].detach().cpu()
+
 
     def on_test_epoch_end(self):
         self.log_dict(self.test_metrics.compute())

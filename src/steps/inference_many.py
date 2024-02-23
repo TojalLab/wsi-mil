@@ -23,6 +23,9 @@ from lib.plot import pil_concat_side_by_side
 
 
 @ray.remote(num_gpus=0.5, max_calls=1)
+def slide_inference_r(cfg, df):
+    slide_inference(cfg, df)
+
 def slide_inference(cfg, df):
     print(cfg)
 
@@ -40,31 +43,43 @@ def slide_inference(cfg, df):
         logger=False,
         devices=1,
         callbacks=cbs
-    )
+    ) 
     preds = trainer.predict(model, inf_dl)
 
     for idx, row in inf_ds.df.iterrows():
-        dd = torch.load(os.path.join(cfg.inference.input.tiles, f'{row.slide_id}.pt'))
+        source_path = os.path.join(cfg.inference.input.tiles, f'{row.slide_id}.pt')
+        if os.path.exists(source_path):
+            dd = torch.load(source_path)
+        else:
+            dd = {'metadata': {}}
         dd['metadata']['model_ckpt'] = cfg.inference.input.model_checkpoint
         dd['pred'] = preds[idx]
         dd['metadata']['class_map'] = model.hparams.cfg.class_map
         dd['metadata']['target_label'] = model.hparams.cfg.target_label
         dd['attention_scores'] = model.pred_to_attention_map(preds[idx])
         torch.save(dd, os.path.join(cfg.inference.output.preds, f'{row.slide_id}.pt'))
+        print(f"Saved to {os.path.join(cfg.inference.output.preds, f'{row.slide_id}.pt')}")
+
+
+def is_debug_mode():
+    gettrace = getattr(sys, 'gettrace', None) 
+    return not (gettrace is None or gettrace() is None)
 
 def get_model_fold_checkpoint(cfg, model, fold):
     """
     Returns the model checkpoint file from the model and fold.
     """
     base = f"{cfg.common.results_dir}/checkpoints"
-    model_folder_name = f"*-AC-CLAM_MB-{model}-fold{fold}"
+    model_folder_name = f"*-{cfg.common.dataset_tag}-CLAM_MB-{model}-fold{fold}"
     print(f"{base}/{model_folder_name}/*")
     chkp_folder = glob.glob(f"{base}/{model_folder_name}/*")[0]
     model_checkpoint = glob.glob(f"{chkp_folder}/*.ckpt")[0]
     return model_checkpoint, chkp_folder
 
 def main(cfg):
-    print(sys.argv)
+    #print(sys.argv)
+    if not is_debug_mode():
+        ray.init(num_cpus=60)
 
     futures, titles = [], {}
     models = cfg.train_many.models
@@ -73,7 +88,7 @@ def main(cfg):
     for model in models:
         for fold in folds:
             ckpt_file, ckpt_folder = get_model_fold_checkpoint(cfg, model, fold)
-            model_folder = f"wsimil-AC-CLAM_MB-{model}-fold{fold}"
+            model_folder = f"wsimil-{cfg.common.dataset_tag}-CLAM_MB-{model}-fold{fold}"
 
             c1 = OmegaConf.load(sys.argv[2])
             c2 = OmegaConf.from_dotlist([
@@ -87,9 +102,12 @@ def main(cfg):
             df = pd.read_csv(cfg.inference.input.metadata)
 
             # inference 
-            remote_id = slide_inference.remote(cfg, df)
-            futures.append(remote_id)
-            titles[remote_id] = f"{model} - fold {fold}"
+            if not is_debug_mode():
+                remote_id = slide_inference_r.remote(cfg, df)
+                futures.append(remote_id)
+                titles[remote_id] = f"{model} - fold {fold}"
+            else:
+                slide_inference(cfg, df)
 
     with create_progress_ctx() as progress:
         task = progress.add_task("Running inference", total=len(futures))

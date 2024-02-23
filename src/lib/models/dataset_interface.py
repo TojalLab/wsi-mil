@@ -6,6 +6,7 @@ import os.path
 import pytorch_lightning as pl
 from omegaconf import open_dict
 import sys
+from lib.ordinal.dataset import label_to_levels
 
 class SlideBatchDataset(torch.utils.data.Dataset):
     def __init__(self, df, feat_dir, label_col=None, shuffle_inst=False, downsample=None, dropout=0.):
@@ -29,6 +30,7 @@ class SlideBatchDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         x = self.df.iloc[idx].slide_id
+
         
         fp = os.path.join(self.feat_dir, f'{x}.pt')
         feats = torch.load(fp)['features']
@@ -54,8 +56,13 @@ class DataModule(pl.LightningDataModule):
         super().__init__()
         self.cfg = cfg
         self.metadata = metadata
-        self.train_df = metadata[metadata.is_valid==0].reset_index(drop=True)
-        self.valid_df = metadata[metadata.is_valid==1].reset_index(drop=True)
+        
+        unique_labels = self.metadata[self.cfg.common.target_label].unique()
+        if "her2_2-" in unique_labels and "her2_low" in unique_labels:
+            self.metadata = self.metadata.replace("her2_low", "her2_2-")
+
+        self.train_df = self.metadata[self.metadata.is_valid==0].reset_index(drop=True)
+        self.valid_df = self.metadata[self.metadata.is_valid==1].reset_index(drop=True)
 
         self.setup()
         # add extra vars as hyperparameters

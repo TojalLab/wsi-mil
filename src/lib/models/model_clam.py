@@ -287,3 +287,20 @@ class CLAM_MB(CLAM_SB):
         if return_features:
             results_dict.update({'features': M})
         return logits, Y_prob, Y_hat, A_raw, results_dict
+
+    def inst_forward(self, h):
+        device = h.device
+        _, h = self.attention_net(h)  # NxK    
+
+        outputs = []
+        for inst_classifier in self.instance_classifiers:
+            outputs.append(inst_classifier(h))
+
+        return torch.stack(outputs)
+
+    
+    def inst_class_forward(self, h, which):
+        device = h.device
+        _, h = self.attention_net(h)  # NxK    
+
+        return self.instance_classifiers[which](h)

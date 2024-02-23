@@ -9,6 +9,11 @@ import importlib
 import steps
 
 def main():
+    import torch
+    torch.manual_seed(0)
+    import numpy as np
+    np.random.seed(0)
+    
     STEPS = list(map(lambda i: i.name, pkgutil.iter_modules(steps.__path__))) # pyright: ignore
     parser = argparse.ArgumentParser()
     parser.add_argument('--config','-c', required=True, type=str)
@@ -21,7 +26,7 @@ def main():
         c1 = OmegaConf.load(args.config)
         c2 = OmegaConf.from_dotlist(args.overrides)
         cfg = OmegaConf.merge(c1, c2)
-        OmegaConf.resolve(cfg)
+        #OmegaConf.resolve(cfg)
     except Exception as e:
         print(f'could not read config: {args.config} {args.overrides}')
         print(e)
