@@ -60,3 +60,5 @@ Models implemented and used here are a re-implementation and/or inspired on exis
 
 - RetCCL: [code](https://github.com/Xiyue-Wang/RetCCL), [paper](https://doi.org/10.1016/j.media.2022.102645)
 
+- TransMIL [code](https://github.com/szc19990412/TransMIL), [paper](https://arxiv.org/abs/2106.00908)
+

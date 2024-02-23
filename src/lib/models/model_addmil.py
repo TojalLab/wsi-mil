@@ -38,7 +38,7 @@ class ADDMIL(torch.nn.Module):
 
         Y_prob = patch_preds.sum(dim=0) # 1xC
 
-        return Y_prob, patch_preds
+        return { "Y_prob": Y_prob, "Y_hat": Y_prob.argmax(dim=0), "patch_preds": patch_preds }
 
             # C1, C2, C3
 # loss = cross_entropy(Y_prob , [1,0,0] )

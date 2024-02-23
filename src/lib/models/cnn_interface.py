@@ -108,22 +108,22 @@ class CNNInterface(pl.LightningModule):
         self.test_metrics.update(y_hat, y)
         self.test_figs.update(y_hat, y)
 
-    def test_epoch_end(self, outs):
+    def on_test_epoch_end(self):
         self.log_dict(self.test_metrics.compute())
 
         labels = list(map(lambda i:i[0], sorted(self.cfg.class_map.items(), key=lambda i:i[1])))
         figs_data = self.test_figs.cpu().compute()
-        cm = figs_data['ConfusionMatrix'].numpy()
-        fpr, tpr, thres = figs_data['ROC']
-        prec, recall, thres = figs_data['PrecisionRecallCurve']
+        cm = figs_data['MulticlassConfusionMatrix'].numpy()
+        fpr, tpr, thres = figs_data['MulticlassROC']
+        prec, recall, thres = figs_data['MulticlassPrecisionRecallCurve']
 
-        self.logger.experiment.add_image('test_figs/cm', figure_to_numpy(confusion_matrix_figure(cm, labels=labels)))
-        self.logger.experiment.add_image('test_figs/pr', figure_to_numpy(pr_curves_figure(prec, recall, labels=labels)))
-        self.logger.experiment.add_image('test_figs/roc', figure_to_numpy(roc_curves_figure(fpr, tpr, labels=labels)))
+        self.logger.experiment.track(aim.Image(confusion_matrix_figure(cm, labels=labels)), name='cm', context={'subset':'test'}) # pyright: ignore
+        self.logger.experiment.track(aim.Image(pr_curves_figure(prec, recall, labels=labels)), name='pr', context={'subset':'test'}) # pyright: ignore
+        self.logger.experiment.track(aim.Image(roc_curves_figure(fpr, tpr, labels=labels)), name='roc', context={'subset':'test'}) # pyright: ignore
 
-    def predict_step(self, batch, batch_idx):
-        x, y = batch
-        return self(x)
+    # def predict_step(self, batch, batch_idx):
+    #     #x, y = batch
+    #     return self(x)
     
     def configure_optimizers(self):
         if self.my_opt_params['body_frozen']:

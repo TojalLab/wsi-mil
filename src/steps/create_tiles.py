@@ -16,7 +16,7 @@ import ray
 
 ray.init()
 
-@ray.remote(num_gpus=0.5, num_cpus=8, max_calls=1) # pyright: ignore
+@ray.remote(num_gpus=0.3, num_cpus=.5, max_calls=1) # pyright: ignore
 def do_bkg_detect(row, cfg, out_fp, target_mpp, orig_mpp):
 
     if cfg.create_tiles.remove_tiles == '9tissues':
@@ -87,7 +87,12 @@ def main(cfg):
 
     if os.path.exists(cfg.create_tiles.output.metadata) and (not cfg.common.rerun_existing_output):
         print(f'output already exists: {cfg.create_tiles.output.metadata}')
-        sys.exit(0)
+        # sys.exit(0)
+        itms = len(tbl)
+        done = [x.replace(".pt", "") for x in os.listdir(cfg.create_tiles.output.tiles)]
+        print(done)
+        tbl = tbl.query("slide_id not in @done")
+        print(f"{itms} to {len(done)} total = {len(tbl)} remaining")
 
     progress = etc.create_progress_ctx()
     pb_task1 = progress.add_task(description='slides')

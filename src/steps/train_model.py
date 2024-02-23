@@ -5,8 +5,10 @@ import os.path
 import pytorch_lightning as pl
 import pytorch_lightning.callbacks as plcallbacks
 from omegaconf import open_dict
+import pandas as pd
 
 from aim.pytorch_lightning import AimLogger
+from rich.progress import Progress, TimeElapsedColumn
 
 import ray
 from ray.tune.integration.pytorch_lightning import TuneReportCallback
@@ -14,11 +16,20 @@ from ray.tune.integration.pytorch_lightning import TuneReportCallback
 from lib.etc import read_metadata
 from lib.models.clam_interface import CLAMInterface
 from lib.models.clam2_interface import CLAM2Interface
+from lib.models.clam_ordinal_interface import OrdinalCLAMInterface
+from lib.models.clam_N_interface import CLAMNInterface
+from lib.models.clam_var_interface import CLAMVarInterface
 from lib.models.dataset_interface import DataModule
+from lib.models.dataset_ordinal_interface import OrdinalDataModule
+from lib.models.transmil_interface import TransMILInterface
 from lib.models.dataset2_interface import TileDataModule
+from lib.models.dataset3_inferface import AugFeaturesModule
 from lib.models.dataset_interface import SlideBatchDataset
 from lib.models.cnn_interface import CNNInterface
+from lib.models.mamil_interface import MAMILInterface
 from lib.models.addmil_interface import ADDMILInterface
+from lib.models.admil_interface import ADMILInterface
+
 
 class ExitCallback(plcallbacks.Callback):
     def on_exception(self, trainer, pl_module, exception):
@@ -37,18 +48,38 @@ def train_one_fold(cfg):
     metadata = metadata[~metadata[target_col].isnull()].reset_index(drop=True)
 
     if 'CLAM' in cfg.train_model.model_type:
-        if cfg.train_model.dataset.augmented_sample:
+        if cfg.train_model.model_type == 'Ordinal-CLAM':
+            dm = OrdinalDataModule(cfg, metadata)
+            m = OrdinalCLAMInterface(cfg.train_model)
+        elif 'stochastic_var' in cfg.train_model.CLAM and cfg.train_model.CLAM.stochastic_var > 0:
+            print("Using nonsense model")
+            dm = DataModule(cfg, metadata)
+            m = CLAMNInterface(cfg.train_model)
+        elif cfg.train_model.dataset.augmented_sample:
             dm = TileDataModule(cfg, metadata)
             m = CLAM2Interface(cfg.train_model)
         else:
             dm = DataModule(cfg, metadata)
             m = CLAMInterface(cfg.train_model)
+    
+    elif cfg.train_model.model_type == 'MIL':
+        dm = DataModule(cfg, metadata)
+        m = TransMILInterface(cfg.train_model)
+    elif cfg.train_model.model_type == 'TransMIL':
+        dm = DataModule(cfg, metadata)
+        m = TransMILInterface(cfg.train_model)
     elif cfg.train_model.model_type == 'CNN':
         dm = TileDataModule(cfg, metadata)
         m = CNNInterface(cfg.train_model)
+    elif cfg.train_model.model_type == 'MAMIL':
+        dm = DataModule(cfg, metadata)
+        m = MAMILInterface(cfg.train_model)
     elif cfg.train_model.model_type == 'ADDMIL':
         dm = DataModule(cfg, metadata)
         m = ADDMILInterface(cfg.train_model)
+    elif cfg.train_model.model_type == 'ADMIL':
+        dm = DataModule(cfg, metadata)
+        m = ADMILInterface(cfg.train_model)
     else:
         raise NotImplementedError()
 
@@ -63,7 +94,7 @@ def train_one_fold(cfg):
         val_metric_prefix='valid/',
         test_metric_prefix='test/',
         system_tracking_interval=None
-        )
+    )
 
     cbs = [plcallbacks.RichProgressBar(), ExitCallback()]
 
@@ -72,7 +103,7 @@ def train_one_fold(cfg):
 
     # if trainer.global_rank > 0
     if not callable(logger.experiment.hash):
-        artifact_dir = os.path.join('results', 'checkpoints', exp_name, logger.experiment.hash)
+        artifact_dir = os.path.join(cfg.common.results_dir, 'checkpoints', exp_name, logger.experiment.hash)
 
         if cfg.train_model.trainer.early_stopping:
             cbs.append(plcallbacks.ModelCheckpoint(dirpath=artifact_dir, monitor=m.valid_monitor, mode=m.monitor_mode))
@@ -101,11 +132,35 @@ def train_one_fold(cfg):
         #track_grad_norm=2
     )
 
-    trainer.fit(m, dm)
-    trainer.test(m, dm.val_dataloader(), ckpt_path='best')
+    try:
+        trainer.fit(m, dm)
+    except e as Exception:
+        print(e)
+        os.makedirs(os.path.join(cfg.common.results_dir, 'err'), exist_ok=True)
+        err_log = open(os.path.join(cfg.common.results_dir, 'err'), f"{exp_name}.pt", "w+")
+        err_log.write(str(e))
+        err_log.close()
+
+    if os.path.exists(cfg.splits.output.replace(".csv", "_test.csv")):
+        print("Evaluating on test dataset:", cfg.splits.output.replace(".csv", "_test.csv"))
+        test_ds = SlideBatchDataset(pd.read_csv(cfg.splits.output.replace(".csv", "_test.csv")).reset_index(drop=True),
+            cfg.train_model.input.features, 
+            cfg.common.target_label)
+        test_ds = torch.utils.data.DataLoader(
+            test_ds,
+            num_workers=cfg.common.num_workers,
+            batch_size=1,
+            pin_memory=False
+        )
+    else:
+        test_ds = dm.val_dataloader()
+        
+    trainer.test(m, test_ds, ckpt_path='best')
     inference(cfg, trainer, m, artifact_dir)
 
-@ray.remote(num_gpus=0.5, max_calls=1)
+    logger.experiment.report_successful_finish()
+
+@ray.remote(num_gpus=0.4, max_calls=1)
 def train_one_fold_r(cfg):
     return train_one_fold(cfg)
 
@@ -122,18 +177,27 @@ def inference(cfg, trainer, model, art_dir):
         dd['pred'] = preds[idx]
         dd['metadata']['class_map'] = model.hparams.cfg.class_map
         dd['metadata']['target_label'] = model.hparams.cfg.target_label
-        dd['attention_scores'] = model.pred_to_attention_map(preds[idx])
+        dd['metadata']['expected']: row[model.hparams.cfg.target_label]
+        #dd['attention_scores'] = model.pred_to_attention_map(preds[idx])
         torch.save(dd, os.path.join(target_dir, f'{row.slide_id}.pt'))
 
 def main(cfg):
     if cfg.train_model.dataset.fold == 'all':
+        ray.init(num_cpus=60)
         tbl = read_metadata(cfg.train_model.input.metadata)
-        futures = {}
+        futures = []
         for fold in tbl.fold.unique():
             with open_dict(cfg):
                 cfg.train_model.dataset.fold = int(fold)
-            futures[fold] = train_one_fold_r.remote(cfg)
-        for fold in futures.keys():
-            ray.get(futures[fold])
+            futures.append(train_one_fold_r.remote(cfg))
+        
+        with Progress(*Progress.get_default_columns(),TimeElapsedColumn(), speed_estimate_period=1e6) as progress:
+            task = progress.add_task("Training models", total=len(futures))
+            
+            while futures:
+                _, futures = ray.wait(futures, num_returns=1)
+                progress.update(task, advance=1, refresh=True)
+
+
     else:
-         train_one_fold(cfg)
+        train_one_fold(cfg)

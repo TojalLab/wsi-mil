@@ -33,7 +33,7 @@ class TiledSlide:
         MPP_DIFF_TOLERANCE = 0.02
         
         if orig_mpp is None:
-            self.meta['orig_mpp'] = float(self.slide.properties['aperio.MPP'])
+            self.meta['orig_mpp'] = float(self.slide.properties['openslide.mpp-x'])
         else:
             self.meta['orig_mpp'] = orig_mpp
         

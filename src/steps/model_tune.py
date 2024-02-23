@@ -16,8 +16,11 @@ from ray.tune.search.ax import AxSearch
 from lib.etc import read_metadata
 from lib.models.clam_interface import CLAMInterface
 from lib.models.dataset_interface import DataModule
+from lib.models.transmil_interface import TransMILInterface
 from lib.models.dataset2_interface import TileDataModule
+from lib.models.dataset3_inferface import AugFeaturesModule
 from lib.models.cnn_interface import CNNInterface
+from lib.models.mamil_interface import MAMILInterface
 
 from .train_model import train_one_fold
 

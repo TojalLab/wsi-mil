@@ -39,7 +39,7 @@ class TiledSlide:
         MPP_DIFF_TOLERANCE = 0.02
         
         if orig_mpp is None:
-            self.meta['orig_mpp'] = float(self.slide.properties['aperio.MPP'])
+            self.meta['orig_mpp'] = float(self.slide.properties['openslide.mpp-x'])
         else:
             self.meta['orig_mpp'] = orig_mpp
         
@@ -95,16 +95,29 @@ class TileDataset(torch.utils.data.Dataset):
         ts = round(tiled_slide.meta['tile_size'] * tiled_slide.meta['scale'])
         self.size = (ts,ts)
         self.level = tiled_slide.meta['level']
-        self.tfms = torchvision.transforms.Compose([
-            torchvision.transforms.Resize((tiled_slide.meta['tile_size'], tiled_slide.meta['tile_size'])),
-            ColorNorm(color_norm),
-            # torchvision.transforms.RandomHorizontalFlip(),
-            # torchvision.transforms.RandomVerticalFlip(),
-            # torchvision.transforms.ToTensor(),
-            # RandomRotate90(),
-            #RandomHED(p=1.),
-            #torchvision.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1)
-        ])
+        if color_norm is None:
+            print(" :: No color normalization ")
+            self.tfms = torchvision.transforms.Compose([
+                torchvision.transforms.Resize((tiled_slide.meta['tile_size'], tiled_slide.meta['tile_size'])),
+                # torchvision.transforms.RandomHorizontalFlip(),
+                # torchvision.transforms.RandomVerticalFlip(),
+                torchvision.transforms.ToTensor(),
+                # RandomRotate90(),
+                #RandomHED(p=1.),
+                #torchvision.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1)
+            ])
+        else:
+            print(" :: Color normalization with", color_norm)
+            self.tfms = torchvision.transforms.Compose([
+                torchvision.transforms.Resize((tiled_slide.meta['tile_size'], tiled_slide.meta['tile_size'])),
+                ColorNorm(color_norm),
+                # torchvision.transforms.RandomHorizontalFlip(),
+                # torchvision.transforms.RandomVerticalFlip(),
+                # torchvision.transforms.ToTensor(),
+                # RandomRotate90(),
+                #RandomHED(p=1.),
+                #torchvision.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1)
+            ])
 
     def __len__(self):
         return len(self.coords)

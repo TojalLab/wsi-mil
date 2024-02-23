@@ -8,9 +8,10 @@ from scipy import linalg
 from skimage.util import dtype, dtype_limits
 from skimage.exposure import rescale_intensity
 import tiatoolbox
-import tiatoolbox.tools
+#import tiatoolbox.tools
 import tiatoolbox.data
 import torchvision
+from torchvision.models.feature_extraction import create_feature_extractor
 
 imagenet_stats = { 'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225] }
 
@@ -42,7 +43,7 @@ class FromDictModule(torch.nn.Module):
 def create_imagenet_feature_extractor(torchvision_model_name, feature_layer, pooling_layer=torch.nn.AdaptiveAvgPool2d(1)):
     import torchvision
     model = getattr(torchvision.models, torchvision_model_name)(pretrained=True)
-    fe = torchvision.models.feature_extraction.create_feature_extractor(model, return_nodes=[feature_layer]).eval()
+    fe = create_feature_extractor(model, return_nodes=[feature_layer]).eval()
     normalization_layer = torchvision.transforms.Normalize(**imagenet_stats)
     return torch.nn.Sequential(
         normalization_layer,
@@ -122,6 +123,7 @@ class RandomHED(torch.nn.Module):
 class ColorNorm(torch.nn.Module):
     def __init__(self, ref_image=None):
         super().__init__()
+        import tiatoolbox.tools
         self.normalizer = tiatoolbox.tools.stainnorm.MacenkoNormalizer()
         if ref_image is None:
             self.normalizer.fit(tiatoolbox.data.stain_norm_target())

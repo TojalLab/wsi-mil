@@ -5,10 +5,9 @@ from lib import bkg_detection
 import os
 import os.path
 import ray
+import sys
 
-ray.init()
 
-@ray.remote(num_gpus=0.5, max_calls=1) # pyright: ignore
 def do_extract_feat(cfg, row):
     fp = os.path.join(cfg.create_tiles.output.tiles, f'{row.slide_id}.pt')
     fout = os.path.join(cfg.extract_features.output.features, f'{row.slide_id}.pt')
@@ -17,11 +16,11 @@ def do_extract_feat(cfg, row):
     fe = fe.to(device)
 
     obj = bkg_detection.TiledSlide.from_tiles_pt(fp)
-    ds = bkg_detection.TileDataset(obj)
+    ds = bkg_detection.TileDataset(obj, cfg.extract_features.input.color_norm)
     dl = torch.utils.data.DataLoader(ds, batch_size=128, 
-                                        shuffle=False, 
-                                        num_workers=cfg.common.num_workers, 
-                                        drop_last=False, pin_memory=True)
+                                         shuffle=False, 
+                                         num_workers=cfg.common.num_workers, 
+                                         drop_last=False, pin_memory=True)
 
     preds = []
     with torch.no_grad():
@@ -38,16 +37,37 @@ def do_extract_feat(cfg, row):
         'metadata': metadata,
         'features': preds
     }, fout)
+    
+@ray.remote(num_gpus=0.5, max_calls=1) # pyright: ignore
+def do_extract_feat_r(cfg, row):
+    do_extract_feat(cfg, row)
+    
+
+def is_debug_mode():
+    gettrace = getattr(sys, 'gettrace', None) 
+    return not (gettrace is None or gettrace() is None)
 
 def main(cfg):
+
+    if not is_debug_mode():
+        ray.init(num_cpus=60)
 
     tbl = read_metadata(cfg.extract_features.input.metadata)
 
     progress = create_progress_ctx()
     pb_task1 = progress.add_task(description='slides')
 
-    os.makedirs(cfg.extract_features.output.features, exist_ok=True)
 
+    if os.path.exists(cfg.extract_features.output.features) and (not cfg.common.rerun_existing_output):
+        # sys.exit(0)
+        itms = len(tbl)
+        done = [x.replace(".pt", "") for x in os.listdir(cfg.extract_features.output.features)]
+        print(done)
+        tbl = tbl.query("slide_id not in @done")
+        print(f"{itms} to {len(done)} total = {len(tbl)} remaining")
+
+    os.makedirs(cfg.extract_features.output.features, exist_ok=True)
+    
     futures = {}
     for idx,row in tbl.iterrows():
         fp = os.path.join(cfg.create_tiles.output.tiles, f'{row.slide_id}.pt')
@@ -56,9 +76,14 @@ def main(cfg):
             raise Exception(f'tiles not found: {fp}')
         if os.path.exists(fout) and (not cfg.common.rerun_existing_output):
             continue
-        futures[idx] = do_extract_feat.remote(cfg, row)
 
-    with progress:
-        for idx in  progress.track(futures.keys(),  task_id=pb_task1, total=len(futures)):
-            ray.get(futures[idx])
+        if is_debug_mode():
+            do_extract_feat(cfg, row)
+        else:
+            futures[idx] = do_extract_feat_r.remote(cfg, row)
+
+    if not is_debug_mode():
+        with progress:
+            for idx in  progress.track(futures.keys(),  task_id=pb_task1, total=len(futures)):
+                ray.get(futures[idx])
 

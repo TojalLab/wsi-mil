@@ -8,24 +8,25 @@ import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 import matplotlib
 from timm.optim import create_optimizer
+from torch.nn import NLLLoss
 
 import aim
 
-from . import model_addmil
+from . import model_admil
 from lib.plot import figure_to_numpy, confusion_matrix_figure, roc_curves_figure, pr_curves_figure
 
-class ADDMILInterface(pl.LightningModule):
+class ADMILInterface(pl.LightningModule):
 
     valid_monitor = 'valid/loss'
     monitor_mode = 'min'
 
     #---->init
     def __init__(self, cfg):
-        super(ADDMILInterface, self).__init__()
+        super(ADMILInterface, self).__init__()
         self.save_hyperparameters()
         self.cfg = cfg
-        self.model = model_addmil.ADDMIL(num_classes=cfg.n_classes, num_features=2048)
-        self.loss = torch.nn.CrossEntropyLoss(label_smoothing=cfg.model.label_smoothing)
+        self.model = model_admil.GatedAttention()
+        self.loss = torch.nn.CrossEntropyLoss()#NLLLoss()
         self.optimizer = {
             'opt':'adam',
             'lr': 2e-4
@@ -69,12 +70,14 @@ class ADDMILInterface(pl.LightningModule):
         data, label = batch
         #print(data.shape)
         result = self.model(data)
-        out = result["Y_prob"]
+        Y_prob = result["Y_prob"]
 
         #---->loss
-        loss = self.loss(out, label.squeeze())
+        #Y_prob = Y_prob#.unsqueeze(0)
+        #label = label.float()
+        loss = self.loss(Y_prob, label)
         self.log('train/loss', loss)
-        self.train_metrics(out.unsqueeze(0), label)
+        self.train_metrics(Y_prob, label)
 
         return {'loss': loss}
 
@@ -83,12 +86,16 @@ class ADDMILInterface(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         data, label = batch
-        result = self.model(data)
-        out = result["Y_prob"]
 
-        loss = self.loss(out, label.squeeze())
+        result = self.model(data)
+        Y_prob = result["Y_prob"]
+
+        #---->loss
+        #Y_prob = Y_prob.squeeze(0)
+        #label = label.float()
+        loss = self.loss(Y_prob, label)
         self.log('valid/loss', loss)
-        self.valid_metrics(out.unsqueeze(0), label)
+        self.valid_metrics(Y_prob, label)
 
     def on_validation_epoch_end(self):
         self.log_dict(self.valid_metrics.compute())
@@ -101,20 +108,19 @@ class ADDMILInterface(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         data, label = batch
         result = self.model(data)
-        out = result["Y_prob"]
+        Y_prob = result["Y_prob"]
 
-        self.test_metrics.update(out.unsqueeze(0), label)
-        self.test_figs.update(out.unsqueeze(0), label)
+        self.test_metrics.update(Y_prob, label)
+        self.test_figs.update(Y_prob, label)
 
-        return {'out' : out, 'label' : label}
 
     def predict_step(self, batch, batch_idx):
-        #data, label = batch
         return self.model(batch)
 
     @staticmethod
-    def pred_to_attention_map(pred, n_head=0):
-        return pred['attn'][0,n_head].min(dim=1).values
+    def pred_to_attention_map(pred):
+        return pred['A'][0,n_head].min(dim=1).values
+
 
     def on_test_epoch_end(self):
         self.log_dict(self.test_metrics.compute())

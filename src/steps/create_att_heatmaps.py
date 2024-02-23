@@ -13,12 +13,15 @@ import pytorch_lightning as pl
 from lib.etc import read_metadata, create_progress_ctx
 from lib.models.clam_interface import CLAMInterface
 from lib.models.dataset_interface import SlideBatchDataset
+from lib.models.transmil_interface import TransMILInterface
 from lib.plot import pil_concat_side_by_side
 
 def slide_inference(cfg, df):
 
     if 'CLAM' in cfg.train_model.model_type:
         model = CLAMInterface.load_from_checkpoint(cfg.att_heatmaps.input.model_checkpoint).eval()
+    elif cfg.train_model.model_type == 'TransMIL':
+        model = TransMILInterface.load_from_checkpoint(cfg.att_heatmaps.input.model_checkpoint).eval()
     else:
         raise NotImplementedError()
 

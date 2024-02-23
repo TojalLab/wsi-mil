@@ -5,6 +5,9 @@ import torch.utils.data
 import torchvision
 import openslide
 import onnxruntime as ort
+import PIL
+import PIL.Image
+from PIL import Image, ImageDraw
 from lib.etc import RandomRotate90, RandomHED, ColorNorm
 
 MODEL_BRCATU_PATH = 'pretrained_models/convnext_TU_0.8_norm.onnx'
@@ -16,7 +19,7 @@ MODEL_BRCATU_LABEL_COLORS = {
 }
 
 class TiledSlide:
-    def __init__(self, slide_path, *, tile_size=256, step_size=256, target_mpp=0.5, orig_mpp=None, coords=None):
+    def __init__(self, slide_path, *, tile_size=256, step_size=256, target_mpp=0.5, orig_mpp=None, coords=None, uses_bounding_box=True):
 
         self.meta = {
             'slide_path': slide_path,
@@ -28,11 +31,12 @@ class TiledSlide:
         
         self.slide = openslide.open_slide(slide_path)
         _ = self.slide.get_thumbnail((200,200)) # force load openslide
+        self.bounding_box = uses_bounding_box
         
         MPP_DIFF_TOLERANCE = 0.02
         
         if orig_mpp is None:
-            self.meta['orig_mpp'] = float(self.slide.properties['aperio.MPP'])
+            self.meta['orig_mpp'] = float(self.slide.properties['openslide.mpp-x'])#aperio.M
         else:
             self.meta['orig_mpp'] = orig_mpp
         
@@ -49,18 +53,47 @@ class TiledSlide:
         else:
             self.gen_all_coords()
 
+    def get_bounding_box(self):
+        thumb = self.slide.get_thumbnail((800,800))
+        scale_x = self.slide.dimensions[0] / thumb.width
+        scale_y = self.slide.dimensions[1] / thumb.height
+        thumb_a = numpy.asarray(thumb)
+
+        min_x, min_y, max_x, max_y = None, None, None, None
+        for x in range(thumb.height):
+            for y in range(thumb.width):
+                if not (thumb_a[x,y] == [255,255,255]).all():
+                    min_x = min(min_x, x) if min_x else x
+                    min_y = min(min_y, y) if min_y else y
+                    max_x = max(max_x, x) if max_x else x
+                    max_y = max(max_y, y) if max_y else y
+        return [int(x) for x in (min_x*scale_x, min_y*scale_y, max_x*scale_x, max_y*scale_y)]
+
     def gen_all_coords(self):
         tile_size = round(self.meta['tile_size'] * self.meta['scale'])
         step_size = round(self.meta['step_size'] * self.meta['scale'])
 
         coords = []
-        i = 0
-        while i+step_size < self.slide.level_dimensions[self.meta['level']][0]:
-            j = 0
-            while j+step_size < self.slide.level_dimensions[self.meta['level']][1]:
-                coords.append([i,j])
-                j += step_size
-            i += step_size
+        if self.bounding_box:
+            min_x, min_y, max_x, max_y = self.get_bounding_box()
+            self.meta['bounding_box'] = {'min_x': min_x, 'min_y': min_y, 'max_x': max_x,'max_y': max_y}
+            print("Bounding box:", min_x, min_y, max_x, max_y, " | Slide dimensions: ", self.slide.level_dimensions[self.meta['level']])
+
+            i = min_x
+            while i+step_size < max_x: # slide.dimensions[0]:
+                j = min_y
+                while j+step_size < max_y: # slide.dimensions[1]:
+                    coords.append([j,i])
+                    j += step_size
+                i += step_size
+        else:
+            i = 0
+            while i+step_size < self.slide.level_dimensions[self.meta['level']][0]:
+                j = 0
+                while j+step_size < self.slide.level_dimensions[self.meta['level']][1]:
+                    coords.append([i,j])
+                    j += step_size
+                i += step_size
         self.coords = torch.tensor(coords)
 
     @classmethod
@@ -166,7 +199,16 @@ class TODetection:
         agg = agg/cnt
         
         ct = torch.Tensor(list(map(lambda i: MODEL_BRCATU_LABEL_COLORS[i], MODEL_BRCATU_LABELS)))
-        return ct[agg.argmax(dim=2)].round().int()
+
+        # bounding = self.tiled_slide.meta["bounding_box"]
+        # img = PIL.Image.fromarray(ct[agg.argmax(dim=2)].round().int().numpy())
+        # d = ImageDraw.Draw(img)
+        # d.rectangle(
+        #     [bounding["min_y"], bounding["min_x"], bounding["max_y"], bounding["max_x"]], 
+        #     outline=(255, 255, 255), 
+        #     width=3)
+
+        return ct[agg.argmax(dim=2)].round().int()#ct #torch.as_tensor(np.asarray(img))
 
     def save_all_preds(self, out_path):
         wm = [ MODEL_BRCATU_LABELS[i] for i in self.preds.max(1).indices ]
