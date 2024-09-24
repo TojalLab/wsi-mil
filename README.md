@@ -3,6 +3,8 @@
 
 A framework to train weakly supervised deep learning models on whole-slide images.
 
+This repository is supporting material for the paper: [Weakly-supervised deep learning models enable HER2-low prediction from H&E stained slides](https://doi.org/10.1186/s13058-024-01863-0)
+
 ## Setup
 
 Install dependecies of the project with conda:
@@ -45,6 +47,25 @@ The pipeline is split into the following steps:
 - create\_att\_heatmaps: generate attention heatmaps from the trained NN results
 
 Run each step in order with the `run_steps.sh` script.
+
+## Citation
+
+If you find this work useful please cite:
+```
+@article{Valieris2024,
+  title = {Weakly-supervised deep learning models enable HER2-low prediction from H\&E stained slides},
+  volume = {26},
+  ISSN = {1465-542X},
+  url = {http://dx.doi.org/10.1186/s13058-024-01863-0},
+  DOI = {10.1186/s13058-024-01863-0},
+  number = {1},
+  journal = {Breast Cancer Research},
+  publisher = {Springer Science and Business Media LLC},
+  author = {Valieris,  Renan and Martins,  Luan and Defelicibus,  Alexandre and Bueno,  Adriana Passos and de Toledo Osorio,  Cynthia Aparecida Bueno and Carraro,  Dirce and Dias-Neto,  Emmanuel and Rosales,  Rafael A. and de Figueiredo,  Jose Marcio Barros and Silva,  Israel Tojal da},
+  year = {2024},
+  month = aug
+}
+```
 
 ## License
 
